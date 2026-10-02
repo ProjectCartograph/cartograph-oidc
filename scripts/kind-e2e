@@ -6,7 +6,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 cluster=${KIND_CLUSTER:-cartograph-oidc}
-image=${CARTOGRAPH_IMAGE:-ghcr.io/projectcartograph/cartograph:2.3.0}
+image=${CARTOGRAPH_IMAGE:-ghcr.io/projectcartograph/cartograph:2.4.0}
 
 if ! kind get clusters | grep -qx "$cluster"; then
   kind create cluster --name "$cluster" --wait 120s
