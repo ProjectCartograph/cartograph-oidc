@@ -129,7 +129,7 @@ its own, for a compose install.
 
 | Piece | Version |
 |---|---|
-| Cartograph | 2.4.0 |
+| Cartograph | 2.5.0 |
 | Dex | 2.45.1 (chart 0.25.2) |
 | oauth2-proxy | 7.15.5 (chart 10.7.1) |
 | GLAuth, the local directory | 2.5.4 |

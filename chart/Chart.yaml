@@ -3,8 +3,8 @@ name: cartograph-oidc
 description: Cartograph behind single sign-on, with access by role and team from the directory
 type: application
 # This chart's version; it pins the three it brings together.
-version: 1.2.0
-appVersion: "2.4.0"
+version: 1.3.0
+appVersion: "2.5.0"
 dependencies:
   - name: dex
     version: 0.25.2
@@ -14,5 +14,5 @@ dependencies:
     version: 10.7.1
     repository: https://oauth2-proxy.github.io/manifests
   - name: cartograph
-    version: 2.4.0
+    version: 2.5.0
     repository: oci://ghcr.io/projectcartograph/charts
