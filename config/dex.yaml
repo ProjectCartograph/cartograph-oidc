@@ -1,0 +1,49 @@
+# Dex: the OIDC provider Cartograph's proxy talks to, standing in front
+# of the directory. Here the directory is LDAP (config/glauth.cfg); in
+# production it is the organisation's own, through the connector that
+# fits it (examples/entra-id for Microsoft Entra ID). Whatever the
+# connector, Dex issues one kind of ID token, with the person's groups
+# in its groups claim.
+issuer: http://localhost:5556/dex
+
+storage:
+  type: memory
+
+web:
+  http: 0.0.0.0:5556
+
+oauth2:
+  skipApprovalScreen: true
+
+staticClients:
+  - id: cartograph
+    name: Cartograph
+    secret: cartograph-local-secret
+    redirectURIs:
+      - http://localhost:4180/oauth2/callback
+
+connectors:
+  - type: ldap
+    id: directory
+    name: Example directory
+    config:
+      host: glauth:3893
+      insecureNoSSL: true
+      bindDN: cn=dex,ou=services,dc=example,dc=org
+      bindPW: try-cartograph
+      usernamePrompt: Email address
+      userSearch:
+        baseDN: dc=example,dc=org
+        filter: "(objectClass=posixAccount)"
+        username: mail
+        idAttr: uid
+        emailAttr: mail
+        nameAttr: displayName
+        preferredUsernameAttr: uid
+      groupSearch:
+        baseDN: dc=example,dc=org
+        filter: "(objectClass=posixGroup)"
+        userMatchers:
+          - userAttr: uid
+            groupAttr: memberUid
+        nameAttr: cn
