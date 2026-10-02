@@ -8,6 +8,9 @@ roles:
   contributor: [curriculum-division, early-grades-team, assessment-unit]
   strategyEditor: [planning-unit]
   administrator: [cartograph-administrators]
+# The roles whose people may connect an agent over MCP (cartograph-engine
+# docs/adr/0016). Their agents read, draft and propose; the people accept.
+agents: [contributor, strategyEditor]
 teams:
   - group: curriculum-division
     name: Curriculum division

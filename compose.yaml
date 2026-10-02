@@ -24,6 +24,15 @@ x-cartograph: &cartograph
     # history, rather than the provider's opaque subject.
     CARTOGRAPH_AUTH_PROXY_HEADER: X-Forwarded-Email
     CARTOGRAPH_AUTHZ: access
+    # Agents over MCP, with Cartograph as their authorization server:
+    # any MCP client connects through the browser, nothing registered
+    # beforehand (cartograph-engine docs/adr/0016).
+    CARTOGRAPH_MCP: "on"
+    CARTOGRAPH_MCP_AUTH: cartograph
+    CARTOGRAPH_MCP_ISSUER: http://localhost:4180
+    # At least 32 bytes, the same on every replica. Generate a real one:
+    # openssl rand -base64 48
+    CARTOGRAPH_AGENT_KEY: cartograph-local-agent-signing-key-placeholder!!
     CARTOGRAPH_ACCESS_FILE: /config/access.yaml
     CARTOGRAPH_LOG_FORMAT: json
   volumes:
@@ -133,6 +142,10 @@ services:
       OAUTH2_PROXY_COOKIE_SECRET: cartograph-local-cookie-secret!!
       OAUTH2_PROXY_COOKIE_SECURE: "false"
       OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "true"
+      # What agents reach without a session: Cartograph checks their
+      # tokens itself, and reads no header on these paths. Consent, at
+      # /oauth/authorize, stays behind sign-in.
+      OAUTH2_PROXY_SKIP_AUTH_ROUTES: "^/api/v1/mcp$,^/oauth/register$,^/oauth/token$,^/\\.well-known/oauth-"
     volumes:
       - ./config/oauth2-proxy.yaml:/etc/oauth2-proxy/oauth2-proxy.yaml:ro
     secrets:

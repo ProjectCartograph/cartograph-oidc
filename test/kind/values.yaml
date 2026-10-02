@@ -54,6 +54,7 @@ oauth2-proxy:
       redirect_url = "http://cartograph-oauth2-proxy/oauth2/callback"
       skip_provider_button = true
       cookie_secure = false
+      skip_auth_routes = ["^/api/v1/mcp$", "^/oauth/register$", "^/oauth/token$", "^/\\.well-known/oauth-"]
   alphaConfig:
     configData:
       upstreamConfig:
@@ -93,3 +94,10 @@ oauth2-proxy:
 cartograph:
   image:
     pullPolicy: IfNotPresent
+  agents:
+    enabled: true
+    auth: cartograph
+    issuer: http://cartograph-oauth2-proxy
+    keySecret:
+      name: cartograph-agent-key
+      key: agent-key

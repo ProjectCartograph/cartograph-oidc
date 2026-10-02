@@ -1,5 +1,5 @@
 # What scripts/kind-e2e installs beside the chart: the fictional
-# directory, a Postgres, and the three Secrets the chart expects. Local
+# directory, a Postgres, and the four Secrets the chart expects. Local
 # placeholders throughout.
 apiVersion: v1
 kind: Secret
@@ -24,6 +24,13 @@ metadata:
   name: cartograph-database
 stringData:
   url: postgres://cartograph:cartograph@postgres:5432/cartograph?sslmode=disable
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cartograph-agent-key
+stringData:
+  agent-key: kind-agent-signing-key-placeholder-of-48-bytes!!
 ---
 apiVersion: apps/v1
 kind: Deployment

@@ -91,6 +91,10 @@ oauth2-proxy:
       skip_provider_button = true
       cookie_secure = true
       reverse_proxy = true
+      # Agents (cartograph-engine docs/adr/0016): Cartograph checks their
+      # tokens itself, and reads no header on these paths. Consent, at
+      # /oauth/authorize, stays behind sign-in.
+      skip_auth_routes = ["^/api/v1/mcp$", "^/oauth/register$", "^/oauth/token$", "^/\\.well-known/oauth-"]
   # As config/oauth2-proxy.yaml for compose: the provider, the upstream,
   # and the headers Cartograph trusts, the display name from Dex's name
   # claim.
@@ -163,6 +167,16 @@ cartograph:
     mode: proxy
     # Versions record the address people read, not the provider's subject.
     proxyHeader: X-Forwarded-Email
+  # Agents over MCP, with Cartograph as their authorization server: any
+  # MCP client connects through the browser, nothing registered with Dex.
+  # The signing key is agent-key in this Secret, at least 32 bytes.
+  agents:
+    enabled: true
+    auth: cartograph
+    issuer: https://cartograph.example.org
+    keySecret:
+      name: cartograph-agent-key
+      key: agent-key
   authz:
     mode: access
     access:
@@ -174,6 +188,7 @@ cartograph:
           contributor: [curriculum-division, early-grades-team, assessment-unit]
           strategyEditor: [planning-unit]
           administrator: [cartograph-administrators]
+        agents: [contributor, strategyEditor]
         teams:
           - group: curriculum-division
             name: Curriculum division

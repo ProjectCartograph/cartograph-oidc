@@ -117,6 +117,20 @@ Cartograph starts. Teams appear in Cartograph's Teams sheet, and
 projects, programmes, operations and data sources name the team they
 belong to.
 
+## Agents
+
+Contributors and strategy editors may connect an agent, such as Claude,
+over MCP (the mapping's `agents:` key). In the client, add
+`http://localhost:4180/api/v1/mcp`. A browser opens, you sign in as
+usual, and Cartograph asks whether the agent may act for you. Nothing
+is registered with Dex for it.
+
+An agent acts for its person, with their access and no more. It reads,
+edits drafts, and proposes; a proposal waits under Proposals until its
+person accepts it, and accepting saves it as them. Each person sees and
+disconnects their agents under Agents (cartograph-engine
+`docs/adr/0016`).
+
 ## In production
 
 `docs/PRODUCTION.md` walks through a Kubernetes install with the chart

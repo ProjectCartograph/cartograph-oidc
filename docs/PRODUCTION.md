@@ -79,10 +79,14 @@ kubectl -n cartograph create secret generic cartograph-oauth2-proxy-secrets \
   --from-literal=client-id=cartograph \
   --from-literal=client-secret="$CLIENT_SECRET" \
   --from-literal=cookie-secret="$(openssl rand -base64 32 | tr -- '+/' '-_')"
+
+kubectl -n cartograph create secret generic cartograph-agent-key \
+  --from-literal=agent-key="$(openssl rand -base64 48)"
 ```
 
 `DEX_CLIENT_SECRET` and `client-secret` are the same value: it is how
-Dex knows oauth2-proxy. If your store goes through PgBouncer in
+Dex knows oauth2-proxy. `agent-key` signs agents' tokens; changing it
+signs every agent out. If your store goes through PgBouncer in
 transaction mode, add `fanoutUrl` with a direct Postgres URL to
 `cartograph-database` (cartograph-engine `docs/DEPLOYMENT.md`).
 
@@ -90,7 +94,7 @@ transaction mode, add `fanoutUrl` with a direct Postgres URL to
 
 Copy `chart/values.yaml` and change:
 
-- every `example.org` host;
+- every `example.org` host, `cartograph.agents.issuer` included;
 - in the Entra ID connector, `clientID` and `tenant` from step 1;
 - the groups, in the connector and in the mapping, from step 2;
 - the ingress class and TLS secret names to your cluster's.
