@@ -238,12 +238,20 @@ def main():
     check("the agent drafts its person's team's project", status == 200 and not result.get("isError"), result)
     status, result, _ = mcp(token, "save_draft", {"kind": "Project", "id": "grade-two-reading-check", "manifest": lee.api("GET", "/manifests/Project/grade-two-reading-check")[1]["manifest"]})
     check("the agent has no more access than its person", status == 200 and result.get("isError"), result)
+    # The seed project meets few of its checks. An agent may not propose
+    # past them (cartograph-engine docs/adr/0017); it names each one it
+    # cannot meet, with why, and its person reads those reasons.
     status, result, _ = mcp(token, "propose_save", {"kind": "Project", "id": "coach-early-grade-teachers", "reason": "describe the situation"})
-    check("the agent proposes saving it", status == 200 and not result.get("isError"), result)
+    check("the agent may not propose past open checks", status == 200 and result.get("isError") and "still open" in json.dumps(result), result)
+    status, report, _ = mcp(token, "checks", {"kind": "Project", "id": "coach-early-grade-teachers"})
+    open_checks = {c["id"]: "Lee has not decided this yet" for c in (report or {}).get("structuredContent", {}).get("open", [])}
+    status, result, _ = mcp(token, "propose_save", {"kind": "Project", "id": "coach-early-grade-teachers", "reason": "describe the situation", "openChecks": open_checks})
+    check("the agent proposes, naming each check it leaves open", status == 200 and not result.get("isError") and len(open_checks) > 0, result)
     versions_now = len(lee.api("GET", "/manifests/Project/coach-early-grade-teachers/versions")[1])
     check("nothing the agent did is a version yet", versions_now == versions_before, f"{versions_before} -> {versions_now}")
     status, mine = lee.api("GET", "/proposals")
-    check("the proposal waits for its person", status == 200 and len(mine) == 1 and mine[0]["agent"] == "Claude", mine)
+    check("the proposal waits for its person, with the agent's reasons", status == 200 and len(mine) == 1 and mine[0]["agent"] == "Claude"
+          and len(mine[0].get("waivers", [])) == len(open_checks), mine)
     pid = mine[0]["id"] if mine else ""
     check("nobody else decides it", sam.api("POST", f"/proposals/{pid}/accept", {})[0] == 403)
     status, decided = lee.api("POST", f"/proposals/{pid}/accept", {"reason": "reads right"})
