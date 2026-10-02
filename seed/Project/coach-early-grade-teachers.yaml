@@ -1,0 +1,16 @@
+apiVersion: cartograph/v1
+kind: Project
+metadata:
+  id: coach-early-grade-teachers
+  name: Coach early-grade teachers in reading
+spec:
+  team: early-grades
+  summary:
+    problems:
+      - id: problem-1
+        problem:
+          situation: fall behind in reading by grade 2
+          cause: few early-grade teachers have been shown how to teach reading with understanding
+        change:
+          what: Every early-grade teacher in rural schools is coached to teach reading
+          gain: read fluently by the end of grade 3

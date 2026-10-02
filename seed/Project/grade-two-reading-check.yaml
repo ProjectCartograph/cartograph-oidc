@@ -1,0 +1,16 @@
+apiVersion: cartograph/v1
+kind: Project
+metadata:
+  id: grade-two-reading-check
+  name: Add a grade 2 reading check
+spec:
+  team: assessment
+  summary:
+    problems:
+      - id: problem-1
+        problem:
+          situation: are found to be behind in reading only at the end of grade 3
+          cause: nothing checks reading before the national assessment
+        change:
+          what: A short reading check every grade 2 teacher can run
+          gain: are seen early and helped before the gap widens

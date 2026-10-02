@@ -1,0 +1,16 @@
+apiVersion: cartograph/v1
+kind: Project
+metadata:
+  id: revise-reading-curriculum
+  name: Revise the early reading curriculum
+spec:
+  team: curriculum-division
+  summary:
+    problems:
+      - id: problem-1
+        problem:
+          situation: are taught to decode words but not to read for meaning
+          cause: the curriculum for the first three grades stops at decoding
+        change:
+          what: The early grades curriculum teaches reading with understanding
+          gain: read with understanding, not only aloud
