@@ -1,0 +1,20 @@
+# Which directory groups grant which of Cartograph's roles, and which
+# groups are teams (cartograph-engine docs/DEPLOYMENT.md, "Access by
+# role and team"). A person whose groups grant a role is listed at their
+# first sign-in; an administrator can list anyone else from the Access
+# page. `cartograph access apply` creates the teams, parents first.
+roles:
+  reader: [staff]
+  contributor: [curriculum-division, early-grades-team, assessment-unit]
+  strategyEditor: [planning-unit]
+  administrator: [cartograph-administrators]
+teams:
+  - group: curriculum-division
+    name: Curriculum division
+  - group: early-grades-team
+    name: Early grades
+    parent: Curriculum division
+  - group: assessment-unit
+    name: Assessment
+  - group: planning-unit
+    name: Planning

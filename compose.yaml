@@ -1,0 +1,184 @@
+# Cartograph behind single sign-on, on one machine: a directory, Dex in
+# front of it, oauth2-proxy in front of Cartograph, and two stateless
+# Cartograph replicas on Postgres with access by role and team.
+#
+#   just up     # docker compose up -d --wait
+#   just e2e    # signs each fictional person in and checks what they may do
+#   just down   # docker compose down -v
+#
+# Open http://localhost:4180 and sign in as any person in
+# config/glauth.cfg (ada@example.org is an administrator); every
+# password is "try-cartograph". Only oauth2-proxy publishes a port to
+# reach Cartograph: a request that does not come through it cannot set
+# the identity headers Cartograph trusts.
+#
+# The secrets are local placeholders. docs/PRODUCTION.md says what to
+# change for a real deployment.
+
+x-cartograph: &cartograph
+  image: ${CARTOGRAPH_IMAGE:-ghcr.io/projectcartograph/cartograph:2.2.1}
+  environment: &cartograph-env
+    CARTOGRAPH_STORE: postgres://cartograph:cartograph@postgres:5432/cartograph?sslmode=disable
+    CARTOGRAPH_AUTH: proxy
+    # Who a version records: the address, which people read in the
+    # history, rather than the provider's opaque subject.
+    CARTOGRAPH_AUTH_PROXY_HEADER: X-Forwarded-Email
+    CARTOGRAPH_AUTHZ: access
+    CARTOGRAPH_ACCESS_FILE: /config/access.yaml
+    CARTOGRAPH_LOG_FORMAT: json
+  volumes:
+    - ./config/access.yaml:/config/access.yaml:ro
+
+x-replica: &replica
+  <<: *cartograph
+  command: ["serve"]
+  depends_on:
+    seed:
+      condition: service_completed_successfully
+  healthcheck:
+    test: ["CMD", "/bin/cartograph", "ready"]
+    interval: 5s
+    timeout: 3s
+    retries: 3
+    start_period: 5s
+  restart: unless-stopped
+
+services:
+  # The directory: people, their groups, their names and titles.
+  glauth:
+    image: glauth/glauth:v2.5.4
+    volumes:
+      - ./config/glauth.cfg:/app/config/config.cfg:ro
+
+  # The OIDC provider, in front of the directory.
+  dex:
+    image: ghcr.io/dexidp/dex:v2.45.1
+    command: ["dex", "serve", "/etc/dex/config.yaml"]
+    ports:
+      - "5556:5556"
+    volumes:
+      - ./config/dex.yaml:/etc/dex/config.yaml:ro
+    depends_on:
+      - glauth
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5556/dex/healthz"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: cartograph
+      POSTGRES_PASSWORD: cartograph
+      POSTGRES_DB: cartograph
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cartograph -d cartograph"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # Creates the teams config/access.yaml maps, once, before any replica
+  # starts, so two replicas never both create a team.
+  teams:
+    <<: *cartograph
+    command: ["access", "apply", "/config/access.yaml"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  # A project for three of the teams, so each person meets work that is
+  # theirs and work that is not.
+  seed:
+    <<: *cartograph
+    command: ["import", "-db", "postgres://cartograph:cartograph@postgres:5432/cartograph?sslmode=disable", "-reason", "seed", "/seed"]
+    volumes:
+      - ./seed:/seed:ro
+    depends_on:
+      teams:
+        condition: service_completed_successfully
+    restart: "no"
+
+  replica-a: *replica
+  replica-b: *replica
+
+  # Round robin over the replicas, no sticky sessions, WebSocket upgrades
+  # passed, and a short connect timeout so a stopped replica costs a
+  # request one second, not sixty.
+  nginx:
+    image: nginx:1.27-alpine
+    configs:
+      - source: nginx
+        target: /etc/nginx/conf.d/default.conf
+    depends_on:
+      replica-a:
+        condition: service_healthy
+      replica-b:
+        condition: service_healthy
+
+  # The only way in: signs people in through Dex and tells Cartograph
+  # who they are (config/oauth2-proxy.yaml).
+  oauth2-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.5
+    command: ["--alpha-config=/etc/oauth2-proxy/oauth2-proxy.yaml"]
+    ports:
+      - "4180:4180"
+    environment:
+      OAUTH2_PROXY_REDIRECT_URL: http://localhost:4180/oauth2/callback
+      OAUTH2_PROXY_EMAIL_DOMAINS: "*"
+      # 32 bytes. Generate a real one: openssl rand -base64 32 | tr -- "+/" "-_"
+      OAUTH2_PROXY_COOKIE_SECRET: cartograph-local-cookie-secret!!
+      OAUTH2_PROXY_COOKIE_SECURE: "false"
+      OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "true"
+    volumes:
+      - ./config/oauth2-proxy.yaml:/etc/oauth2-proxy/oauth2-proxy.yaml:ro
+    secrets:
+      - oauth2-proxy-client-secret
+    depends_on:
+      dex:
+        condition: service_healthy
+      nginx:
+        condition: service_started
+
+configs:
+  nginx:
+    content: |
+      map $$http_upgrade $$connection_upgrade {
+        default upgrade;
+        ''      close;
+      }
+
+      upstream cartograph {
+        zone cartograph 64k;
+        server replica-a:8080 max_fails=1 fail_timeout=5s;
+        server replica-b:8080 max_fails=1 fail_timeout=5s;
+      }
+
+      server {
+        listen 8080;
+
+        location / {
+          proxy_pass http://cartograph;
+          proxy_connect_timeout 1s;
+          proxy_http_version 1.1;
+          proxy_set_header Host $$host;
+          proxy_set_header Upgrade $$http_upgrade;
+          proxy_set_header Connection $$connection_upgrade;
+          proxy_read_timeout 1h;
+          proxy_send_timeout 1h;
+          # Pass the identity oauth2-proxy set, and nothing a client set.
+          proxy_pass_request_headers on;
+        }
+      }
+
+secrets:
+  # Dex's static client secret for oauth2-proxy (config/dex.yaml), a local
+  # placeholder.
+  oauth2-proxy-client-secret:
+    file: ./config/oauth2-proxy-client-secret
+
+volumes:
+  postgres-data:

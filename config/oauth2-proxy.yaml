@@ -1,0 +1,56 @@
+# oauth2-proxy, in its structured (alpha) configuration: who signs in,
+# where requests go, and which headers tell Cartograph who is asking.
+#
+# The browser reaches Dex at localhost:5556 and oauth2-proxy reaches it
+# on the compose network as dex:5556, so discovery is skipped and each
+# endpoint is named: the issuer and login page as the browser sees them,
+# the token and keys endpoints as oauth2-proxy does.
+upstreamConfig:
+  upstreams:
+    - id: cartograph
+      path: /
+      uri: http://nginx:8080/
+      proxyWebSockets: true
+
+# What Cartograph trusts (CARTOGRAPH_AUTH=proxy). Every one is set here
+# from the session and never taken from the request.
+injectRequestHeaders:
+  - name: X-Forwarded-User
+    values: [{ claimSource: { claim: user } }]
+  - name: X-Forwarded-Email
+    values: [{ claimSource: { claim: email } }]
+  - name: X-Forwarded-Groups
+    values: [{ claimSource: { claim: groups } }]
+  # The name people see each other by. Dex puts the directory's display
+  # name in the name claim for every connector (LDAP's displayName,
+  # Entra ID's displayName), so it is taken from there.
+  - name: X-Forwarded-Preferred-Username
+    values: [{ claimSource: { claim: name } }]
+
+providers:
+  - id: dex
+    provider: oidc
+    name: Example directory
+    clientID: cartograph
+    # The secret Dex knows the client by, from a file (compose's secret
+    # here; a Kubernetes Secret mounted the same way in the chart).
+    clientSecretFile: /run/secrets/oauth2-proxy-client-secret
+    scope: openid email profile groups
+    loginURL: http://localhost:5556/dex/auth
+    redeemURL: http://dex:5556/dex/token
+    additionalClaims: [name]
+    # Dex shows its consent screen when asked to force it; these people
+    # sign in to their own organisation's tool.
+    loginURLParameters:
+      - name: approval_prompt
+        default: [auto]
+    oidcConfig:
+      issuerURL: http://localhost:5556/dex
+      skipDiscovery: true
+      jwksURL: http://dex:5556/dex/keys
+      emailClaim: email
+      groupsClaim: groups
+      audienceClaims: [aud]
+
+server:
+  bindAddress: 0.0.0.0:4180
