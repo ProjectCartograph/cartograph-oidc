@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Make the pinned Cartograph image available to Docker: pull it, or,
+# when the registry will not serve it (a private package, no network to
+# it), build the same image from cartograph-engine's flake at that tag.
+set -euo pipefail
+image=${CARTOGRAPH_IMAGE:-ghcr.io/projectcartograph/cartograph:2.2.1}
+version=${image##*:}
+if docker image inspect "$image" >/dev/null 2>&1 || docker pull -q "$image" >/dev/null 2>&1; then
+  echo "$image: pulled"
+  exit 0
+fi
+echo "$image: not pullable; building cartograph-engine v$version's image"
+out=$(nix build --no-link --print-out-paths "github:ProjectCartograph/cartograph-engine/v$version#image")
+loaded=$(docker load < "$out" | sed -n 's/^Loaded image: //p')
+docker tag "$loaded" "$image"
+echo "$image: built from v$version"

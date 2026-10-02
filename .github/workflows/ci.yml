@@ -49,6 +49,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@main
+      - run: scripts/cartograph-image
       - run: docker compose up -d --wait
       - run: python3 scripts/e2e.py
       - if: failure()
@@ -69,4 +71,5 @@ jobs:
           primary-key: nix-devshell-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock') }}
           restore-prefixes-first-match: nix-devshell-${{ runner.os }}-${{ runner.arch }}-
           save: false
+      - run: scripts/cartograph-image
       - run: nix develop --command just kind-e2e

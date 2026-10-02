@@ -3,6 +3,7 @@ set shell := ["nix", "develop", "--command", "bash", "-c"]
 
 # Start everything on this machine (compose.yaml); open http://localhost:4180
 up:
+    scripts/cartograph-image
     docker compose up -d --wait
 
 # Stop it and drop its database
