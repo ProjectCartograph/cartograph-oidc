@@ -3,7 +3,7 @@
 # when the registry will not serve it (a private package, no network to
 # it), build the same image from cartograph-engine's flake at that tag.
 set -euo pipefail
-image=${CARTOGRAPH_IMAGE:-ghcr.io/projectcartograph/cartograph:2.2.1}
+image=${CARTOGRAPH_IMAGE:-ghcr.io/projectcartograph/cartograph:2.3.0}
 version=${image##*:}
 if docker image inspect "$image" >/dev/null 2>&1 || docker pull -q "$image" >/dev/null 2>&1; then
   echo "$image: pulled"

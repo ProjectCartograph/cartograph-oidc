@@ -16,7 +16,7 @@
 # change for a real deployment.
 
 x-cartograph: &cartograph
-  image: ${CARTOGRAPH_IMAGE:-ghcr.io/projectcartograph/cartograph:2.2.1}
+  image: ${CARTOGRAPH_IMAGE:-ghcr.io/projectcartograph/cartograph:2.3.0}
   environment: &cartograph-env
     CARTOGRAPH_STORE: postgres://cartograph:cartograph@postgres:5432/cartograph?sslmode=disable
     CARTOGRAPH_AUTH: proxy
