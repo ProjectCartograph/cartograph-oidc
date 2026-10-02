@@ -1,0 +1,21 @@
+# Dex's connector for Microsoft Entra ID (README.md beside this file).
+# Replace the two ids, set ENTRA_CLIENT_SECRET in Dex's environment, and
+# list the groups config/access.yaml maps.
+connectors:
+  - type: microsoft
+    id: entra
+    name: Sign in with your organisation account
+    config:
+      clientID: 00000000-0000-0000-0000-000000000000
+      clientSecret: $ENTRA_CLIENT_SECRET
+      redirectURI: https://sso.example.org/dex/callback
+      tenant: 00000000-0000-0000-0000-000000000000
+      onlySecurityGroups: true
+      useGroupsAsWhitelist: true
+      groups:
+        - staff
+        - curriculum-division
+        - early-grades-team
+        - assessment-unit
+        - planning-unit
+        - cartograph-administrators
