@@ -1,0 +1,12 @@
+dependencies:
+- name: dex
+  repository: https://charts.dexidp.io
+  version: 0.25.2
+- name: oauth2-proxy
+  repository: https://oauth2-proxy.github.io/manifests
+  version: 10.7.1
+- name: cartograph
+  repository: oci://ghcr.io/projectcartograph/charts
+  version: 2.2.1
+digest: sha256:52004eb8f60d32e4d5ff6bcbbf31a11b662d3243281ec49c0dcd180f04554d1d
+generated: "2026-10-01T23:18:55.290120484-04:00"

@@ -1,0 +1,31 @@
+{{- if .Values.networkPolicy.enabled }}
+# Cartograph trusts the identity headers on every request it receives
+# (auth.mode=proxy), so only oauth2-proxy may send it any: a pod that
+# could reach Cartograph directly could claim to be anyone. Metrics stay
+# open on their own port for the cluster's Prometheus.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-cartograph-from-proxy
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: cartograph
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: oauth2-proxy
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      ports:
+        - port: 8080
+          protocol: TCP
+    - ports:
+        - port: 9090
+          protocol: TCP
+{{- end }}

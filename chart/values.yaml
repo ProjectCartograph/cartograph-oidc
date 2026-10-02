@@ -1,0 +1,189 @@
+# Cartograph behind single sign-on (README.md, docs/PRODUCTION.md).
+#
+#   people -> oauth2-proxy (cartograph.example.org) -> Cartograph replicas
+#                  |                                       |
+#                  v                                       v
+#             Dex (sso.example.org) -> your directory   Postgres
+#
+# Replace every example.org host, and create the three Secrets named
+# below before installing (docs/PRODUCTION.md shows the commands).
+# Nothing here holds a secret.
+
+# The NetworkPolicy that lets only oauth2-proxy reach Cartograph's pods.
+# Cartograph trusts the identity headers it is sent, so nothing else may
+# reach it; leave this on unless the cluster enforces the same another
+# way.
+networkPolicy:
+  enabled: true
+
+dex:
+  enabled: true
+  # Dex keeps its state in Kubernetes custom resources, so it needs no
+  # volume and runs as two replicas.
+  replicaCount: 2
+  envFrom:
+    # DEX_CLIENT_SECRET (the same value as oauth2-proxy's client-secret)
+    # and what the connector needs, such as ENTRA_CLIENT_SECRET. Dex
+    # expands $VARIABLES in its configuration.
+    - secretRef:
+        name: cartograph-dex-secrets
+  config:
+    issuer: https://sso.example.org/dex
+    storage:
+      type: kubernetes
+      config:
+        inCluster: true
+    oauth2:
+      skipApprovalScreen: true
+    staticClients:
+      - id: cartograph
+        name: Cartograph
+        secretEnv: DEX_CLIENT_SECRET
+        redirectURIs:
+          - https://cartograph.example.org/oauth2/callback
+    # One connector to the organisation's directory. Microsoft Entra ID
+    # is shown; examples/entra-id/README.md says how to register Dex
+    # there. Dex also speaks LDAP, SAML, GitHub, Google and any OIDC
+    # provider (https://dexidp.io/docs/connectors/).
+    connectors:
+      - type: microsoft
+        id: entra
+        name: Sign in with your organisation account
+        config:
+          clientID: 00000000-0000-0000-0000-000000000000
+          clientSecret: $ENTRA_CLIENT_SECRET
+          redirectURI: https://sso.example.org/dex/callback
+          tenant: 00000000-0000-0000-0000-000000000000
+          # Groups by name, only the ones config/access.yaml maps, so a
+          # person in hundreds of groups still fits in a cookie.
+          onlySecurityGroups: true
+          useGroupsAsWhitelist: true
+          groups:
+            - cartograph-administrators
+            - planning-unit
+            - curriculum-division
+            - early-grades-team
+            - assessment-unit
+            - staff
+  ingress:
+    enabled: true
+    className: nginx
+    hosts:
+      - host: sso.example.org
+        paths:
+          - path: /dex
+            pathType: Prefix
+    tls:
+      - secretName: sso-tls
+        hosts: [sso.example.org]
+
+oauth2-proxy:
+  replicaCount: 2
+  config:
+    # cookie-secret, and client-secret mounted below, in this Secret.
+    existingSecret: cartograph-oauth2-proxy-secrets
+    requiredSecretKeys: [cookie-secret]
+    # What the structured configuration below does not hold.
+    upstreams: []
+    configFile: |
+      email_domains = ["*"]
+      redirect_url = "https://cartograph.example.org/oauth2/callback"
+      skip_provider_button = true
+      cookie_secure = true
+      reverse_proxy = true
+  # As config/oauth2-proxy.yaml for compose: the provider, the upstream,
+  # and the headers Cartograph trusts, the display name from Dex's name
+  # claim.
+  alphaConfig:
+    enabled: true
+    configData:
+      upstreamConfig:
+        upstreams:
+          - id: cartograph
+            path: /
+            uri: http://cartograph:8080/
+            proxyWebSockets: true
+      injectRequestHeaders:
+        - name: X-Forwarded-User
+          values: [{ claimSource: { claim: user } }]
+        - name: X-Forwarded-Email
+          values: [{ claimSource: { claim: email } }]
+        - name: X-Forwarded-Groups
+          values: [{ claimSource: { claim: groups } }]
+        - name: X-Forwarded-Preferred-Username
+          values: [{ claimSource: { claim: name } }]
+      providers:
+        - id: dex
+          provider: oidc
+          name: your organisation
+          clientID: cartograph
+          clientSecretFile: /etc/oauth2-proxy-client/client-secret
+          scope: openid email profile groups
+          additionalClaims: [name]
+          loginURLParameters:
+            - name: approval_prompt
+              default: [auto]
+          oidcConfig:
+            issuerURL: https://sso.example.org/dex
+            emailClaim: email
+            groupsClaim: groups
+            audienceClaims: [aud]
+  extraVolumes:
+    - name: client-secret
+      secret:
+        secretName: cartograph-oauth2-proxy-secrets
+        items:
+          - key: client-secret
+            path: client-secret
+  extraVolumeMounts:
+    - name: client-secret
+      mountPath: /etc/oauth2-proxy-client
+      readOnly: true
+  ingress:
+    enabled: true
+    className: nginx
+    hosts: [cartograph.example.org]
+    annotations:
+      # The sync socket is a long-lived WebSocket.
+      nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+      nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    tls:
+      - secretName: cartograph-tls
+        hosts: [cartograph.example.org]
+
+cartograph:
+  # A fixed name, so oauth2-proxy's upstream and the NetworkPolicy can
+  # name it.
+  fullnameOverride: cartograph
+  replicaCount: 2
+  store:
+    # url (and fanoutUrl behind PgBouncer), in the cartograph-database Secret.
+    existingSecret: cartograph-database
+  auth:
+    mode: proxy
+    # Versions record the address people read, not the provider's subject.
+    proxyHeader: X-Forwarded-Email
+  authz:
+    mode: access
+    access:
+      # The directory's groups, as config/access.yaml maps them for the
+      # local directory. Use your directory's group names.
+      mapping:
+        roles:
+          reader: [staff]
+          contributor: [curriculum-division, early-grades-team, assessment-unit]
+          strategyEditor: [planning-unit]
+          administrator: [cartograph-administrators]
+        teams:
+          - group: curriculum-division
+            name: Curriculum division
+          - group: early-grades-team
+            name: Early grades
+            parent: Curriculum division
+          - group: assessment-unit
+            name: Assessment
+          - group: planning-unit
+            name: Planning
+  # Reached only through oauth2-proxy, never from an ingress of its own.
+  ingress:
+    enabled: false
