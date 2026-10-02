@@ -1,0 +1,95 @@
+# The chart on a kind cluster, for scripts/kind-e2e: everything over
+# plain HTTP inside the cluster, Dex in front of the fictional directory
+# (config/glauth.cfg) instead of Entra ID, no ingress. The test's
+# "browser" runs in a pod, so it reaches Dex and oauth2-proxy at the
+# same in-cluster names oauth2-proxy itself uses.
+dex:
+  replicaCount: 2
+  config:
+    issuer: http://cartograph-dex:5556/dex
+    storage:
+      type: kubernetes
+      config:
+        inCluster: true
+    oauth2:
+      skipApprovalScreen: true
+    staticClients:
+      - id: cartograph
+        name: Cartograph
+        secretEnv: DEX_CLIENT_SECRET
+        redirectURIs:
+          - http://cartograph-oauth2-proxy/oauth2/callback
+    connectors:
+      - type: ldap
+        id: directory
+        name: Example directory
+        config:
+          host: glauth:3893
+          insecureNoSSL: true
+          bindDN: cn=dex,ou=services,dc=example,dc=org
+          bindPW: $LDAP_BIND_PASSWORD
+          usernamePrompt: Email address
+          userSearch:
+            baseDN: dc=example,dc=org
+            filter: "(objectClass=posixAccount)"
+            username: mail
+            idAttr: uid
+            emailAttr: mail
+            nameAttr: displayName
+            preferredUsernameAttr: uid
+          groupSearch:
+            baseDN: dc=example,dc=org
+            filter: "(objectClass=posixGroup)"
+            userMatchers:
+              - userAttr: uid
+                groupAttr: memberUid
+            nameAttr: cn
+  ingress:
+    enabled: false
+
+oauth2-proxy:
+  config:
+    configFile: |
+      email_domains = ["*"]
+      redirect_url = "http://cartograph-oauth2-proxy/oauth2/callback"
+      skip_provider_button = true
+      cookie_secure = false
+  alphaConfig:
+    configData:
+      upstreamConfig:
+        upstreams:
+          - id: cartograph
+            path: /
+            uri: http://cartograph:8080/
+            proxyWebSockets: true
+      injectRequestHeaders:
+        - name: X-Forwarded-User
+          values: [{ claimSource: { claim: user } }]
+        - name: X-Forwarded-Email
+          values: [{ claimSource: { claim: email } }]
+        - name: X-Forwarded-Groups
+          values: [{ claimSource: { claim: groups } }]
+        - name: X-Forwarded-Preferred-Username
+          values: [{ claimSource: { claim: name } }]
+      providers:
+        - id: dex
+          provider: oidc
+          name: Example directory
+          clientID: cartograph
+          clientSecretFile: /etc/oauth2-proxy-client/client-secret
+          scope: openid email profile groups
+          additionalClaims: [name]
+          loginURLParameters:
+            - name: approval_prompt
+              default: [auto]
+          oidcConfig:
+            issuerURL: http://cartograph-dex:5556/dex
+            emailClaim: email
+            groupsClaim: groups
+            audienceClaims: [aud]
+  ingress:
+    enabled: false
+
+cartograph:
+  image:
+    pullPolicy: IfNotPresent

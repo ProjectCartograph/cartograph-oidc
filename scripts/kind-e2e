@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# The chart on a throwaway kind cluster: the fictional directory, a
+# Postgres, the chart with two Cartograph replicas, Dex and oauth2-proxy,
+# the seed, and scripts/e2e.py run from a pod in the cluster. Needs
+# Docker. KEEP=1 leaves the cluster up afterwards.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+cluster=${KIND_CLUSTER:-cartograph-oidc}
+image=${CARTOGRAPH_IMAGE:-ghcr.io/projectcartograph/cartograph:2.2.1}
+
+if ! kind get clusters | grep -qx "$cluster"; then
+  kind create cluster --name "$cluster" --wait 120s
+fi
+if [ "${KEEP:-}" != 1 ]; then
+  trap 'kind delete cluster --name "$cluster" >/dev/null 2>&1' EXIT
+fi
+kubectl config use-context "kind-$cluster" >/dev/null
+
+# An image this machine has (a local build, or one from a registry the
+# cluster cannot pull from) goes in directly.
+if docker image inspect "$image" >/dev/null 2>&1; then
+  kind load docker-image "$image" --name "$cluster"
+fi
+
+kubectl create configmap glauth --from-file=glauth.cfg=config/glauth.cfg --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -f test/kind/fixtures.yaml
+kubectl rollout status deploy/postgres deploy/glauth --timeout=180s
+
+helm repo add dex https://charts.dexidp.io --force-update >/dev/null
+helm repo add oauth2-proxy https://oauth2-proxy.github.io/manifests --force-update >/dev/null
+helm dependency build chart >/dev/null
+helm upgrade --install cartograph chart -f test/kind/values.yaml \
+  --set "cartograph.image.repository=${image%:*}" --set "cartograph.image.tag=${image##*:}" \
+  --wait --timeout 8m
+
+kubectl create configmap seed-projects --from-file=seed/Project --dry-run=client -o yaml | kubectl apply -f -
+kubectl create configmap e2e --from-file=e2e.py=scripts/e2e.py --dry-run=client -o yaml | kubectl apply -f -
+kubectl delete job seed e2e --ignore-not-found >/dev/null
+sed "s#CARTOGRAPH_IMAGE#$image#" test/kind/jobs.yaml | kubectl apply -f - >/dev/null
+kubectl wait --for=condition=complete job/seed --timeout=180s
+if ! kubectl wait --for=condition=complete job/e2e --timeout=300s; then
+  kubectl logs job/e2e || true
+  exit 1
+fi
+kubectl logs job/e2e

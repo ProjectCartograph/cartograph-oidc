@@ -1,0 +1,44 @@
+# The seed, then the end-to-end test from inside the cluster
+# (scripts/kind-e2e substitutes CARTOGRAPH_IMAGE).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: seed
+spec:
+  backoffLimit: 2
+  template:
+    spec:
+      restartPolicy: Never
+      securityContext: { runAsNonRoot: true, runAsUser: 65532 }
+      containers:
+        - name: seed
+          image: CARTOGRAPH_IMAGE
+          imagePullPolicy: IfNotPresent
+          args: ["import", "-db", "$(CARTOGRAPH_STORE)", "-reason", "seed", "/seed"]
+          env:
+            - name: CARTOGRAPH_STORE
+              valueFrom: { secretKeyRef: { name: cartograph-database, key: url } }
+          volumeMounts:
+            - { name: seed, mountPath: /seed/Project }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: seed, configMap: { name: seed-projects } }
+        - { name: tmp, emptyDir: {} }
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: e2e
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: e2e
+          image: python:3.13-alpine
+          command: ["python3", "/e2e/e2e.py", "http://cartograph-oauth2-proxy"]
+          volumeMounts:
+            - { name: e2e, mountPath: /e2e }
+      volumes:
+        - { name: e2e, configMap: { name: e2e } }
