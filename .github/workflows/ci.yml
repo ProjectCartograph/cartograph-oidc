@@ -1,0 +1,72 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+  # cache-nix-action purges its own old entries.
+  actions: write
+
+jobs:
+  # The chart renders and validates against the pinned charts; the tree
+  # holds only the product.
+  chart:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@main
+        with:
+          extra-conf: |
+            keep-outputs = true
+            keep-env-derivations = true
+      - uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-devshell-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock') }}
+          restore-prefixes-first-match: nix-devshell-${{ runner.os }}-${{ runner.arch }}-
+          gc-max-store-size-linux: 4G
+          purge: true
+          purge-prefixes: nix-devshell-${{ runner.os }}-${{ runner.arch }}-
+          purge-created: 0
+          purge-last-accessed: P1DT12H
+          purge-primary-key: never
+      - run: nix develop --command just ci
+
+  commits:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: scripts/check-commit-msg origin/${{ github.base_ref }}
+
+  # Everything on one machine with compose, and each fictional person
+  # signed in through Dex and checked.
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose up -d --wait
+      - run: python3 scripts/e2e.py
+      - if: failure()
+        run: docker compose logs
+
+  # The chart on a kind cluster, the same checks from a pod inside it.
+  kind:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@main
+        with:
+          extra-conf: |
+            keep-outputs = true
+            keep-env-derivations = true
+      - uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-devshell-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock') }}
+          restore-prefixes-first-match: nix-devshell-${{ runner.os }}-${{ runner.arch }}-
+          save: false
+      - run: nix develop --command just kind-e2e

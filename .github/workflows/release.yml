@@ -1,0 +1,39 @@
+name: release
+
+# A release is a tag v<chart version>. The chart, with its dependencies,
+# goes to the registry as an OCI artifact:
+#   helm install cartograph oci://ghcr.io/<owner>/charts/cartograph-oidc --version <version>
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  chart:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-devshell-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock') }}
+          restore-prefixes-first-match: nix-devshell-${{ runner.os }}-${{ runner.arch }}-
+          save: false
+      - run: |
+          version=$(sed -n 's/^version: *//p' chart/Chart.yaml)
+          test "v$version" = "${GITHUB_REF_NAME}" || { echo "tag ${GITHUB_REF_NAME} does not match chart version $version"; exit 1; }
+      - run: nix develop --command just ci
+      - name: package and push the chart
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          repo=oci://ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/charts
+          nix develop --command helm package chart --destination dist
+          echo "$GITHUB_TOKEN" | nix develop --command helm registry login ghcr.io --username "${{ github.actor }}" --password-stdin
+          nix develop --command helm push dist/cartograph-oidc-*.tgz "$repo"
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
