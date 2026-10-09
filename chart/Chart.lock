@@ -7,6 +7,6 @@ dependencies:
   version: 10.7.1
 - name: cartograph
   repository: oci://ghcr.io/projectcartograph/charts
-  version: 2.6.0
-digest: sha256:7aaa5104fe8eba04b63860b12036bbc2482e2701d9d3ba1d16ecf2eb56f163a0
-generated: "2026-10-02T18:16:27.153975-04:00"
+  version: 2.11.0
+digest: sha256:82dd7a51f0d2a2ce853432f4badcec1b0f4527367b2856f8eb53fdf872c4dda4
+generated: "2026-10-15T14:31:26.613073078-04:00"
