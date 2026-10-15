@@ -127,6 +127,17 @@ def mcp(token, tool, args=None, method="tools/call"):
         return e.code, e.read().decode("utf-8", "replace"), e.headers.get("WWW-Authenticate", "")
 
 
+def tool_json(result):
+    """A tool's answer as JSON: its structured content, or its text."""
+    result = result if isinstance(result, dict) else {}
+    if isinstance(result.get("structuredContent"), dict):
+        return result["structuredContent"]
+    try:
+        return json.loads(result["content"][0]["text"])
+    except (KeyError, IndexError, ValueError):
+        return {}
+
+
 def as_person(email):
     b = Browser()
     b.sign_in(email)
@@ -241,23 +252,48 @@ def main():
     # The seed project meets few of its checks. An agent may not propose
     # past them (cartograph-engine docs/adr/0017); it names each one it
     # cannot meet, with why, and its person reads those reasons.
-    status, result, _ = mcp(token, "propose_save", {"kind": "Project", "id": "coach-early-grade-teachers", "reason": "describe the situation"})
+    _, summary, _ = mcp(token, "work_summary", {})
+    status, result, _ = mcp(token, "propose_save", {"kind": "Project", "id": "coach-early-grade-teachers", "reason": "describe the situation", "confirm": tool_json(summary).get("confirm", {}).get("token", "")})
     check("the agent may not propose past open checks", status == 200 and result.get("isError") and "still open" in json.dumps(result), result)
     status, report, _ = mcp(token, "checks", {"kind": "Project", "id": "coach-early-grade-teachers"})
-    open_checks = {c["id"]: "Lee has not decided this yet" for c in (report or {}).get("structuredContent", {}).get("open", [])}
-    status, result, _ = mcp(token, "propose_save", {"kind": "Project", "id": "coach-early-grade-teachers", "reason": "describe the situation", "openChecks": open_checks})
-    check("the agent proposes, naming each check it leaves open", status == 200 and not result.get("isError") and len(open_checks) > 0, result)
+    open_checks = [c["id"] for c in (report or {}).get("structuredContent", {}).get("open", [])]
+    # Since Cartograph 2.11 an agent leaves a check open only after asking
+    # its person the question a round put to them, naming its id with their
+    # answer; and it proposes only what its person confirmed, by the token
+    # of the summary it showed them (cartograph-engine docs/adr/0030, 0032).
+    rec = ("Project", "coach-early-grade-teachers")
+    left = None
+    for _ in range(10):
+        _, r, _ = mcp(token, "round", {"work": ["/".join(rec)]})
+        r = tool_json(r)
+        asked = [q for part in ("settle", "ask", "write") for q in (r.get(part) or []) if (q.get("kind"), q.get("id")) == rec]
+        if not asked:
+            break
+        for q in asked:
+            _, left, _ = mcp(token, "leave_open", {
+                "kind": rec[0], "id": rec[1], "check": q["check"],
+                "reason": "Lee has not decided this yet",
+                "asked": f"Lee was asked and will decide it at the next planning meeting ({q['question']})"})
+            if (left or {}).get("isError"):
+                break
+    _, summary, _ = mcp(token, "work_summary", {})
+    confirm = tool_json(summary).get("confirm", {}).get("token", "")
+    status, result, _ = mcp(token, "propose_save", {"kind": rec[0], "id": rec[1], "reason": "describe the situation", "confirm": confirm})
+    check("the agent proposes, naming each check it leaves open", status == 200 and not (left or {}).get("isError") and not result.get("isError") and len(open_checks) > 0, [left, result])
     versions_now = len(lee.api("GET", "/manifests/Project/coach-early-grade-teachers/versions")[1])
     check("nothing the agent did is a version yet", versions_now == versions_before, f"{versions_before} -> {versions_now}")
-    status, mine = lee.api("GET", "/proposals")
-    check("the proposal waits for its person, with the agent's reasons", status == 200 and len(mine) == 1 and mine[0]["agent"] == "Claude"
-          and len(mine[0].get("waivers", [])) == len(open_checks), mine)
+    # What an agent proposes is a change set waiting for its person
+    # (cartograph-engine docs/adr/0024).
+    status, mine = lee.api("GET", "/changesets?status=proposed")
+    mine = [s for s in (mine if status == 200 else []) if s.get("agent") == "Claude"]
+    waived = len(mine[0].get("waivers", [])) if mine else 0
+    check("the proposal waits for its person, with the agent's reasons", len(mine) == 1 and waived == len(open_checks), mine)
     pid = mine[0]["id"] if mine else ""
-    check("nobody else decides it", sam.api("POST", f"/proposals/{pid}/accept", {})[0] == 403)
-    status, decided = lee.api("POST", f"/proposals/{pid}/accept", {"reason": "reads right"})
+    check("nobody else decides it", sam.api("POST", f"/changesets/{pid}/accept", {})[0] == 403)
+    status, decided = lee.api("POST", f"/changesets/{pid}/accept", {"reason": "reads right"})
     status_v, versions = lee.api("GET", "/manifests/Project/coach-early-grade-teachers/versions")
     last = versions[-1] if status_v == 200 and versions else {}
-    check("its person accepts, and it is saved as theirs", status == 200 and last.get("actor") == "lee@example.org" and "proposed by Claude" in last.get("reason", ""), last)
+    check("its person accepts, and it is saved as theirs", status == 200 and last.get("actor") == "lee@example.org" and "by Claude" in last.get("reason", ""), last)
     status, grants = lee.api("GET", "/agents")
     # Agents disconnected by an earlier run stay listed, as disconnected.
     grants = [g for g in grants if not g.get("revokedAt")] if status == 200 else []
